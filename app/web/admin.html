@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>后台管理 · 鹈鹕观察站</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><script defer src="/privacy.js"></script><script defer src="/admin.js"></script></head>
+<body>
+  <nav class="topbar" aria-label="主导航"><a class="brand" href="/"><img src="/favicon.svg" alt="" width="30" height="30">鹈鹕观察站 <span>ADMIN CONSOLE</span></a><div class="action-buttons"><button class="button secondary" id="logout" hidden>退出登录</button><a class="button secondary" href="/">返回公开页面 ↗</a></div></nav>
+  <main class="admin-main">
+    <header class="page-head"><div><div class="eyebrow">SYSTEM SETTINGS <span>/ ADMIN</span></div><h1>后台检测，由你设定<span class="accent">。</span></h1><p>保存即生效，无需重启服务。公开页面只展示脱敏信息。</p></div><span class="badge neutral" id="admin-status">连接管理服务中</span></header>
+    <div id="admin-content" hidden>
+      <section class="panel settings-panel admin-settings nodes-panel" aria-labelledby="nodes-title">
+        <div class="nodes-heading"><div class="section-heading"><span class="number">01</span><div><h2 id="nodes-title">模型节点</h2><p>一个当前节点负责定时检测。每个节点都可独立测试，单次测试不会切换当前节点。</p></div></div><button class="button primary" type="button" id="add-node">＋ 新增节点</button></div>
+        <div id="node-list" aria-live="polite"></div>
+        <p class="field-note">更换当前节点不影响已发出的请求。后台同一时刻执行一轮检测，防止重复消耗额度。</p>
+      </section>
+      <form id="admin-form" autocomplete="off" class="admin-layout system-form">
+        <section class="panel settings-panel admin-settings"><div class="section-heading"><span class="number">02</span><div><h2>调度与系统配置</h2><p>新配置用于下一次请求，正在运行的请求不受影响。</p></div></div>
+          <div class="admin-fields"><label for="interval">检测时间间隔 <span>分钟</span></label><input id="interval" type="number" min="1" max="1440" step="1" required><p class="field-note">支持 1–1440 分钟。修改后按新间隔重新计算下次检测时间。</p>
+          <div class="form-row"><div><label for="timeout">后台请求超时 / 秒</label><input id="timeout" type="number" min="10" max="600" step="1" required></div><div><label for="max-tokens">后台输出 Token 上限</label><input id="max-tokens" type="number" min="1024" max="64000" step="1" required></div></div>
+          <label for="retry-count">后台失败重试次数</label><input id="retry-count" type="number" min="0" max="5" step="1" required><p class="field-note">默认重试 2 次，最多请求 3 次；仅重试临时请求故障，所有尝试共用本项超时预算。</p>
+          <label class="toggle-row" for="admin-enabled"><span><b>启用后台自动检测</b><small>暂停后仍可由管理员单次检测</small></span><input type="checkbox" id="admin-enabled" role="switch"><span class="switch" aria-hidden="true"></span></label>
+          <label class="toggle-row" for="guest-enabled"><span><b>开放访客独立测试</b><small>使用访客当次提交的接口和密钥</small></span><input type="checkbox" id="guest-enabled" role="switch"><span class="switch" aria-hidden="true"></span></label>
+          <div class="admin-next"><span>下次后台检测</span><strong id="admin-next">尚未启用</strong><small>北京时间 UTC+8</small></div></div>
+        </section>
+        <div class="admin-actions"><div><p id="admin-message" class="form-message" role="status" aria-live="polite"></p><p class="field-note">访客凭据不保存；仅脱敏结果公开保留 1 小时。</p></div><div class="action-buttons"><button class="button secondary" type="button" id="admin-run">测试当前节点一次</button><button class="button primary" type="submit" id="admin-save">保存系统配置</button></div></div>
+      </form>
+    </div>
+    <footer><span>后台配置修改仅对站点任务生效，访客测试独立执行。</span><a href="/">查看公开观察站 ↗</a></footer>
+  </main>
+  <dialog id="node-dialog" aria-labelledby="node-title"><form id="node-form" autocomplete="off">
+    <div class="eyebrow">MODEL NODE</div><h2 id="node-title">新增节点</h2>
+    <label for="node-name">节点名称</label><input id="node-name" required maxlength="60" placeholder="例如：主线路、备用线路">
+          <div class="saved-settings"><div><span>已保存的 API 地址</span><strong id="saved-url">****</strong></div><div><span>已保存的 API Key</span><strong id="saved-key">尚未配置</strong></div></div>
+          <label for="admin-url">更换 API 地址</label><input id="admin-url" type="text" placeholder="留空保留当前地址" maxlength="2048" autocomplete="off" spellcheck="false" data-secret>
+          <label for="admin-key">更换 API Key</label><input id="admin-key" type="text" placeholder="留空保留当前密钥" maxlength="4096" autocomplete="off" spellcheck="false" data-secret><p class="field-note">更换地址时需同时填写该地址的密钥。保存后不会返回完整地址或密钥。</p>
+          <label for="admin-model">模型名称</label><input id="admin-model" required maxlength="120" autocomplete="off">
+          <div class="form-row"><div><label for="admin-effort">思考强度</label><select id="admin-effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select></div><div><label for="admin-protocol">接口协议</label><select id="admin-protocol"><option value="responses">Responses</option><option value="chat">Chat Completions</option></select></div></div>
+    <p id="node-message" class="form-message" role="status"></p>
+    <div class="action-buttons"><button class="button secondary" type="button" id="node-cancel">取消</button><button class="button primary" type="submit" id="node-save">保存节点</button></div>
+  </form></dialog>
+  <dialog id="auth-dialog" aria-labelledby="auth-title"><form id="auth-form"><div class="eyebrow">ADMIN ACCESS</div><h2 id="auth-title">登录后台管理</h2><p id="auth-description">请输入管理密码。</p><label for="admin-token">管理密码</label><input id="admin-token" type="password" autocomplete="current-password" maxlength="256" required><div id="confirm-password-row" hidden><label for="confirm-password">确认管理密码</label><input id="confirm-password" type="password" autocomplete="new-password" maxlength="256"></div><button class="button primary full" id="auth-submit">登录</button><p id="auth-error" role="status"></p><a href="/">返回公开页面</a></form></dialog>
+</body></html>

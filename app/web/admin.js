@@ -1,0 +1,157 @@
+const $ = id => document.getElementById(id);
+let token = '', busy = false, config, setup = false, nodes = [], editingNode = null, nodeSignature = '';
+const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+privacy.bind(document);
+async function api(path, body) {
+  const response = await fetch(path, {method:body === undefined ? 'GET' : 'POST', headers:{...(body === undefined ? {} : {'Content-Type':'application/json'}), ...(token ? {Authorization:`Bearer ${token}`} : {})}, ...(body === undefined ? {} : {body:JSON.stringify(body)})});
+  if (response.status === 401 && !path.startsWith('/api/auth/')) {
+    token = ''; $('logout').hidden = true;
+    $('admin-content').hidden = true;
+    if (!$('auth-dialog').open) $('auth-dialog').showModal();
+    throw new Error('请输入正确的管理口令');
+  }
+  const data = await response.json().catch(() => ({error:`服务返回异常响应（HTTP ${response.status}），请刷新后重试`}));
+  if (!response.ok) throw new Error(data.error || '操作失败');
+  return data;
+}
+function message(text, error = false) { $('admin-message').textContent = text; $('admin-message').classList.toggle('error',error); }
+function showConfig(data) {
+  config = data;
+  $('interval').value = config.interval_minutes;
+  $('timeout').value = config.timeout_seconds;
+  $('retry-count').value = config.retry_count;
+  $('max-tokens').value = config.max_output_tokens;
+  $('admin-enabled').checked = config.enabled;
+  $('guest-enabled').checked = config.guest_enabled;
+  $('admin-content').hidden = false;
+  $('logout').hidden = false;
+  $('admin-status').className = `badge ${config.enabled ? 'passed' : 'neutral'}`;
+  $('admin-status').textContent = `${config.node_name} · ${config.enabled ? '自动检测已启用' : '自动检测已暂停'}`;
+  $('admin-next').textContent = config.enabled ? new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(config.next_run*1000)) : '尚未启用';
+  $('admin-run').disabled = !config.has_key;
+}
+function renderNodes() {
+  const signature = JSON.stringify([nodes,busy]);
+  if (signature === nodeSignature) return;
+  nodeSignature = signature;
+  const running = nodes.some(n => n.last_run?.status === 'running');
+  const labels = {passed:'双项通过',error:'请求失败',invalid:'校验未通过',running:'检测中'};
+  $('node-list').innerHTML = nodes.map(n => `<article class="node-row ${n.active ? 'active-node' : ''}"><div class="node-info"><h3>${escapeHTML(n.name)} ${n.active ? '<span class="badge passed">当前节点</span>' : ''}</h3><p>${escapeHTML(n.base_url)} · ${escapeHTML(n.model)} · ${escapeHTML(n.effort)} · ${n.protocol === 'responses' ? 'Responses' : 'Chat Completions'}</p><p>密钥 ${escapeHTML(n.api_key_masked)}</p></div><div class="node-actions"><button class="button secondary" type="button" data-edit="${n.id}" ${busy ? 'disabled' : ''}>编辑</button><button class="button secondary" type="button" data-activate="${n.id}" ${busy || n.active || !n.has_key ? 'disabled' : ''}>${n.active ? '使用中' : '设为当前'}</button><button class="button primary" type="button" data-test="${n.id}" ${busy || running || !n.has_key ? 'disabled' : ''}>测试一次</button></div><div class="node-result">${n.last_run ? `<span class="badge ${escapeHTML(n.last_run.status)}">${labels[n.last_run.status] || '尚未检测'}</span><span>最近一轮 #${n.last_run.id} · ${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(n.last_run.started*1000))}</span><a href="/?run=${n.last_run.id}" target="_blank" rel="noopener">查看结果 ↗</a>${n.last_run.error ? `<p>${escapeHTML(n.last_run.error)}</p>` : ''}` : '<span>尚未检测</span>'}</div></article>`).join('');
+  $('admin-run').disabled = busy || running || !config?.has_key;
+  $('add-node').disabled = busy;
+}
+async function refreshNodes() { nodes = await api('/api/admin/nodes'); renderNodes(); }
+function editNode(id = null) {
+  const node = nodes.find(n => n.id === id);
+  editingNode = id;
+  $('node-title').textContent = node ? '编辑节点' : '新增节点';
+  $('node-name').value = node?.name || '';
+  $('saved-url').textContent = node?.base_url || '尚未配置';
+  $('saved-key').textContent = node?.api_key_masked || '尚未配置';
+  $('admin-url').required = !node; $('admin-key').required = !node;
+  $('admin-url').placeholder = node ? '留空保留当前地址' : 'example.com 或 https://example.com/v1';
+  $('admin-key').placeholder = node ? '留空保留当前密钥' : '填写该节点的 API Key';
+  $('admin-model').value = node?.model || 'gpt-6-astra';
+  $('admin-effort').value = node?.effort || 'medium';
+  $('admin-protocol').value = node?.protocol || 'responses';
+  privacy.clear($('admin-url')); privacy.clear($('admin-key'));
+  $('node-message').textContent = '';
+  $('node-dialog').showModal();
+}
+$('add-node').addEventListener('click', () => editNode());
+$('node-cancel').addEventListener('click', () => $('node-dialog').close());
+$('node-dialog').addEventListener('close', () => { privacy.clear($('admin-url')); privacy.clear($('admin-key')); });
+$('node-list').addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button || busy) return;
+  if (button.dataset.edit) return editNode(Number(button.dataset.edit));
+  action(async () => {
+    if (button.dataset.activate) {
+      showConfig(await api(`/api/admin/nodes/${button.dataset.activate}/activate`,{}));
+      message(`已切换到「${config.node_name}」。${config.enabled ? '后续定时检测使用该节点。' : '自动检测仍处于暂停状态。'}`);
+    } else if (button.dataset.test) {
+      const result = await api(`/api/admin/nodes/${button.dataset.test}/run`,{});
+      message(`第 ${result.id} 轮检测已开始，结果将在对应节点下更新；当前节点保持不变。`);
+    }
+    await refreshNodes();
+  });
+});
+$('node-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (busy || !$('node-form').reportValidity()) return;
+  busy = true; $('node-save').disabled = true; $('node-cancel').disabled = true; renderNodes();
+  const values = {name:$('node-name').value.trim(),base_url:privacy.read($('admin-url')),api_key:privacy.read($('admin-key')),model:$('admin-model').value.trim(),effort:$('admin-effort').value,protocol:$('admin-protocol').value};
+  try {
+    await api(editingNode === null ? '/api/admin/nodes' : `/api/admin/nodes/${editingNode}`,values);
+    $('node-dialog').close();
+    showConfig(await api('/api/admin/settings')); await refreshNodes();
+    message('节点已保存。可设为当前节点，或单独测试一次。');
+  } catch (error) { $('node-message').textContent = error.message; }
+  finally { values.base_url = ''; values.api_key = ''; busy = false; $('node-save').disabled = false; $('node-cancel').disabled = false; renderNodes(); }
+});
+async function load() {
+  $('admin-content').hidden = true;
+  $('logout').hidden = true;
+  try {
+    const status = await api('/api/auth/status');
+    setup = !status.configured;
+    $('auth-title').textContent = setup ? '首次设置管理密码' : '登录后台管理';
+    $('auth-description').textContent = setup ? (status.setup_allowed ? '设置 12 位以上的密码。以后每次进入后台都需要登录。' : '请先在服务所在机器打开后台设置密码。') : '请输入管理密码。登录状态最长保留 2 小时。';
+    $('admin-token').minLength = setup ? 12 : 1;
+    $('admin-token').autocomplete = setup ? 'new-password' : 'current-password';
+    $('confirm-password-row').hidden = !setup;
+    $('confirm-password').required = setup;
+    $('auth-submit').textContent = setup ? '设置密码并登录' : '登录';
+    $('auth-submit').disabled = setup && !status.setup_allowed;
+    $('admin-status').textContent = setup ? '等待设置管理密码' : '等待登录';
+    if (!$('auth-dialog').open) $('auth-dialog').showModal();
+  } catch (error) { $('admin-status').textContent = error.message; }
+}
+async function action(fn) {
+  if (busy) return;
+  busy = true; $('admin-save').disabled = true; renderNodes();
+  try { await fn(); }
+  catch (error) { message(error.message,true); }
+  finally { busy = false; $('admin-save').disabled = false; renderNodes(); }
+}
+$('admin-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!$('admin-form').reportValidity()) return;
+  action(async () => {
+    const values = {retry_count:Number($('retry-count').value),interval_minutes:Number($('interval').value), timeout_seconds:Number($('timeout').value), max_output_tokens:Number($('max-tokens').value), enabled:$('admin-enabled').checked, guest_enabled:$('guest-enabled').checked};
+    const result = await api('/api/admin/settings',values);
+    showConfig(result);
+    message('配置已保存并生效。后续检测使用新配置，无需重启。');
+  });
+});
+$('admin-run').addEventListener('click', () => action(async () => {
+  const result = await api('/api/admin/run',{});
+  await refreshNodes();
+  message(`后台第 ${result.id} 轮检测已开始，可在公开页面查看结果。`);
+}));
+$('auth-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const password = $('admin-token').value;
+  if (setup && password !== $('confirm-password').value) { $('auth-error').textContent = '两次输入的密码不一致。'; return; }
+  $('auth-submit').disabled = true;
+  try {
+    if (setup) { await api('/api/auth/setup',{password}); setup = false; }
+    const session = await api('/api/auth/login',{password});
+    token = session.token;
+    showConfig(await api('/api/admin/settings'));
+    await refreshNodes();
+    $('auth-dialog').close(); $('admin-token').value = ''; $('confirm-password').value = ''; $('auth-error').textContent = '';
+  } catch (error) { token = ''; $('auth-error').textContent = error.message; }
+  finally { $('auth-submit').disabled = false; }
+});
+$('logout').addEventListener('click', async () => {
+  try { await api('/api/auth/logout',{}); }
+  finally {
+    token = ''; config = undefined; nodes = []; nodeSignature = ''; $('node-list').replaceChildren();
+    privacy.clear($('admin-url')); privacy.clear($('admin-key'));
+    $('admin-content').hidden = true; $('logout').hidden = true;
+    await load();
+  }
+});
+load();
+setInterval(() => { if (token && !busy && !$('node-dialog').open) refreshNodes().catch(error => message(error.message,true)); }, 5000);
