@@ -99,6 +99,14 @@ Linux 如缺少浏览器系统依赖，可执行 `python -m playwright install -
 
 访客完整 API 地址和密钥仅在任务排队及执行期间保留在内存中；公开结果包含脱敏域名、模型、回答和生成的 SVG。访客结果会对其他访问者可见，不要向测试提交机密内容。完成结果保留一小时；重启后未完成任务标记中断。
 
+## 友情链接
+
+- [Linux DO](https://linux.do/)
+
+## 不降智网站推荐
+
+- [fullcupai](https://api.fullcupai.com/)
+
 ## 许可证
 
 [Apache License 2.0](LICENSE)
