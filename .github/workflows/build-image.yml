@@ -51,10 +51,18 @@ jobs:
             if [ "$status" = 200 ]; then break; fi
             sleep 2
           done
+          root_status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18765/ || true)
+          admin_status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18765/admin || true)
+          for attempt in $(seq 1 30); do
+            health=$(docker inspect --format '{{.State.Health.Status}}' manxue-ai-smoke 2>/dev/null || true)
+            if [ "$health" = healthy ]; then break; fi
+            sleep 2
+          done
+          printf 'auth=%s root=%s admin=%s health=%s\n' "$status" "$root_status" "$admin_status" "$health"
           test "$status" = 200
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18765/)" = 200
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18765/admin)" = 200
-          test "$(docker inspect --format '{{.State.Health.Status}}' manxue-ai-smoke)" = healthy
+          test "$root_status" = 200
+          test "$admin_status" = 200
+          test "$health" = healthy
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
