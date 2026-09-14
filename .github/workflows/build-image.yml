@@ -41,6 +41,8 @@ jobs:
           docker run --detach --rm --name manxue-ai-smoke \
             --publish 18765:8765 \
             --env ADMIN_TOKEN='ci-only-admin-token-123' \
+            --health-cmd="python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/auth/status', timeout=5)\"" \
+            --health-interval=5s --health-timeout=5s --health-retries=3 \
             manxue-ai:ci
           cleanup() { docker rm --force manxue-ai-smoke >/dev/null 2>&1 || true; }
           trap cleanup EXIT
